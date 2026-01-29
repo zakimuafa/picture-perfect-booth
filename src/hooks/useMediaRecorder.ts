@@ -1,47 +1,12 @@
 import { useState, useRef, useCallback } from 'react';
 
-export const useMediaRecorder = (videoRef: React.RefObject<HTMLVideoElement>) => {
+export const useMediaRecorder = (videoRef: React.RefObject<HTMLVideoElement | null>) => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-
-  const startRecording = useCallback((maxDuration: number = 15) => {
-    if (!videoRef.current?.srcObject) return;
-
-    const stream = videoRef.current.srcObject as MediaStream;
-    chunksRef.current = [];
-
-    try {
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'video/webm;codecs=vp9',
-      });
-
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          chunksRef.current.push(e.data);
-        }
-      };
-
-      mediaRecorderRef.current = mediaRecorder;
-      mediaRecorder.start(100);
-      setIsRecording(true);
-      setRecordingTime(0);
-
-      timerRef.current = setInterval(() => {
-        setRecordingTime((prev) => {
-          if (prev >= maxDuration - 1) {
-            stopRecording();
-            return prev;
-          }
-          return prev + 1;
-        });
-      }, 1000);
-    } catch (err) {
-      console.error('Recording error:', err);
-    }
-  }, [videoRef]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const maxDurationRef = useRef<number>(15);
 
   const stopRecording = useCallback((): Promise<string | null> => {
     return new Promise((resolve) => {
@@ -67,6 +32,49 @@ export const useMediaRecorder = (videoRef: React.RefObject<HTMLVideoElement>) =>
       mediaRecorderRef.current.stop();
     });
   }, []);
+
+  const startRecording = useCallback((maxDuration: number = 15) => {
+    if (!videoRef.current?.srcObject) return;
+
+    const stream = videoRef.current.srcObject as MediaStream;
+    chunksRef.current = [];
+    maxDurationRef.current = maxDuration;
+
+    try {
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'video/webm;codecs=vp9',
+      });
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorderRef.current = mediaRecorder;
+      mediaRecorder.start(100);
+      setIsRecording(true);
+      setRecordingTime(0);
+
+      let currentTime = 0;
+      timerRef.current = setInterval(() => {
+        currentTime += 1;
+        setRecordingTime(currentTime);
+        
+        if (currentTime >= maxDurationRef.current) {
+          if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+          }
+          if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop();
+          }
+        }
+      }, 1000);
+    } catch (err) {
+      console.error('Recording error:', err);
+    }
+  }, [videoRef]);
 
   return {
     isRecording,
