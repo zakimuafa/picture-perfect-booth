@@ -67,13 +67,38 @@ export const useCamera = () => {
   const flipCamera = useCallback(async () => {
     const newFacing = facing === 'user' ? 'environment' : 'user';
     setFacing(newFacing);
-  }, [facing]);
+    
+    // Directly restart camera with new facing - must be in same gesture context
+    try {
+      setError(null);
+      
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
 
-  useEffect(() => {
-    if (isActive) {
-      startCamera();
+      const constraints: MediaStreamConstraints = {
+        video: {
+          facingMode: newFacing,
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      streamRef.current = stream;
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+
+      setIsActive(true);
+    } catch (err) {
+      console.error('Camera flip error:', err);
+      setError('Could not flip camera. Please try again.');
     }
-  }, [facing]);
+  }, [facing, checkCameras]);
 
   const capturePhoto = useCallback((): string | null => {
     if (!videoRef.current) return null;
